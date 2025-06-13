@@ -1,0 +1,115 @@
+<!-- HEADER -->
+<header class="w-full bg-white border-b shadow-sm fixed top-0 left-0 z-50">
+  <div class="max-w-xl mx-auto px-4 py-3 text-center font-semibold text-lg">
+    🍽 Go-Dutch | แชร์ค่าอาหาร
+  </div>
+</header>
+
+<!-- MAIN -->
+<main class="pt-[60px] pb-[70px] max-w-xl mx-auto px-4 space-y-6 text-sm sm:text-base">
+
+  <!-- ผู้ร่วมจ่าย -->
+  <section>
+    <h2 class="text-base font-semibold mb-3">👥 ผู้ร่วมจ่าย</h2>
+    <div class="space-y-2">
+      <div class="flex items-center gap-2" *ngFor="let payer of payers; let i = index">
+        <mat-form-field appearance="outline" class="flex-1">
+          <input matInput [(ngModel)]="payer.name" placeholder="ชื่อคนที่ {{ i + 1 }}" />
+        </mat-form-field>
+        <button mat-icon-button color="warn" (click)="removePayer(i)" *ngIf="payers.length > 1">
+          <mat-icon>delete</mat-icon>
+        </button>
+      </div>
+    </div>
+    <button mat-stroked-button class="mt-3 w-full" (click)="addPayer()">+ เพิ่มคน</button>
+  </section>
+
+  <!-- รายการอาหาร -->
+  <section>
+    <h2 class="text-base font-semibold mb-3">🍱 รายการอาหาร</h2>
+    <div *ngFor="let item of items; let i = index" class="rounded border border-gray-200 p-4 mb-4 bg-white space-y-3">
+      <mat-form-field appearance="outline" class="w-full">
+        <input matInput [(ngModel)]="item.name" placeholder="ชื่ออาหาร" />
+      </mat-form-field>
+      <mat-form-field appearance="outline" class="w-full">
+        <input matInput type="number" [(ngModel)]="item.price" placeholder="ราคา (บาท)" />
+      </mat-form-field>
+      <mat-form-field appearance="outline" class="w-full">
+        <mat-select [(ngModel)]="item.paidBy" placeholder="ใครจ่าย">
+          <mat-option *ngFor="let payer of payers; trackBy: trackByName" [value]="payer.name">
+            {{ payer.name }}
+          </mat-option>
+        </mat-select>
+      </mat-form-field>
+      <div>
+        <label class="text-xs text-gray-500">หารกับใครบ้าง</label>
+        <div class="flex flex-wrap gap-2 mt-1">
+          <mat-checkbox *ngFor="let payer of payers" [(ngModel)]="item.splitWith[payer.name]">
+            {{ payer.name }}
+          </mat-checkbox>
+        </div>
+      </div>
+      <div class="text-right">
+        <button mat-button color="warn" (click)="removeItem(i)">ลบรายการ</button>
+      </div>
+    </div>
+    <button mat-stroked-button class="w-full" (click)="addItem()">+ เพิ่มรายการ</button>
+  </section>
+
+  <!-- สรุปยอด -->
+  <section>
+    <h2 class="text-base font-semibold mb-3">📊 สรุปยอด</h2>
+    <div class="divide-y border border-gray-200 rounded bg-white">
+      <div *ngFor="let payer of payers" class="flex justify-between px-4 py-2">
+        <span>{{ payer.name }}</span>
+        <span class="font-medium text-gray-700">
+          {{ getAmountToPay(payer.name) | number:'1.2-2' }} ฿
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- โอนคืน -->
+  <section>
+    <h2 class="text-base font-semibold mb-3">💸 การโอนเงินชดใช้</h2>
+    <div *ngIf="getTransferInstructions().length === 0" class="text-gray-500 italic">
+      ทุกคนจ่ายเท่ากันแล้ว ไม่ต้องโอนเงิน 🎉
+    </div>
+    <div *ngFor="let t of getTransferInstructions()" class="flex justify-between px-4 py-2 bg-green-50 border border-green-200 rounded mb-2">
+      <div>{{ t.from }} ➜ {{ t.to }}</div>
+      <div class="font-semibold text-green-800">{{ t.amount | number:'1.2-2' }} ฿</div>
+    </div>
+  </section>
+
+  <!-- แชร์ลิงก์ -->
+  <section>
+    <button mat-raised-button color="primary" class="w-full" (click)="shareLink()">
+      📤 แชร์ลิงก์ให้เพื่อน
+    </button>
+  </section>
+
+  <!-- ตรวจสอบสลิป -->
+  <section class="mt-6 space-y-2">
+    <h2 class="font-semibold">🧾 ตรวจสอบสลิป</h2>
+
+    <mat-form-field appearance="outline" class="w-full">
+      <input matInput placeholder="ชื่อผู้โอน (จาก)" [(ngModel)]="testFrom" />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-full">
+      <input matInput placeholder="ชื่อผู้รับเงิน (ถึง)" [(ngModel)]="testTo" />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-full">
+      <input matInput type="number" placeholder="จำนวนเงินที่โอน" [(ngModel)]="testAmount" />
+    </mat-form-field>
+
+    <button mat-raised-button color="accent" (click)="verifySlip()">ตรวจสอบสลิป</button>
+
+    <div *ngIf="slipResult !== null" class="text-sm mt-2 font-medium"
+         [ngClass]="{ 'text-green-600': slipResult, 'text-red-600': !slipResult }">
+      {{ slipResult ? '✅ โอนถูกต้องตามระบบแนะนำ' : '❌ ไม่พบรายการนี้ในคำแนะนำ' }}
+    </div>
+  </section>
+
+</main>
