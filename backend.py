@@ -6,6 +6,9 @@ from sqlalchemy.orm import sessionmaker
 from pyzbar.pyzbar import decode
 from PIL import Image
 import io
+from fastapi import Request
+from sqlalchemy import Text
+from sqlalchemy.dialects.postgresql import JSONB
 
 DATABASE_URL = "postgresql://postgres:p%40assw0rd@localhost:5433/dutch"
 
@@ -31,6 +34,13 @@ class SlipHistory(Base):
     promptpay = Column(String)
     status = Column(Boolean)
     created_at = Column(DateTime, server_default=func.now())
+
+Base.metadata.create_all(bind=engine)
+
+class SharedState(Base):
+    __tablename__ = 'shared_state'
+    id = Column(Integer, primary_key=True)
+    data = Column(JSONB)
 
 Base.metadata.create_all(bind=engine)
 
@@ -101,3 +111,24 @@ def get_slip_history():
         "status": s.status,
         "created_at": s.created_at.isoformat()
     } for s in slips ]
+
+@app.post("/api/state/save")
+async def save_state(request: Request):
+    session = SessionLocal()
+    payload = await request.json()
+
+    # ล้างข้อมูลเก่า (กรณีมีหลาย record)
+    session.query(SharedState).delete()
+    session.commit()
+
+    state = SharedState(data=payload)
+    session.add(state)
+    session.commit()
+    return {"status": "ok"}
+
+# Endpoint สำหรับโหลด shared state
+@app.get("/api/state/load")
+def load_state():
+    session = SessionLocal()
+    latest = session.query(SharedState).order_by(SharedState.id.desc()).first()
+    return latest.data if latest else {}

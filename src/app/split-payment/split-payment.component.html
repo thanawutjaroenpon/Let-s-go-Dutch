@@ -1,114 +1,259 @@
 <!-- HEADER -->
-<header class="w-full bg-white border-b shadow-sm fixed top-0 left-0 z-50">
-  <div class="max-w-xl mx-auto px-4 py-3 text-center font-semibold text-lg">
-    🍽 Go-Dutch | แชร์ค่าอาหาร
+<header class="bg-white border-b sticky top-0 z-50">
+  <div class="max-w-sm mx-auto px-4 py-3 text-center font-medium">
+    🍽 Go-Dutch
   </div>
 </header>
 
 <!-- MAIN -->
-<main class="pt-[60px] pb-[70px] max-w-xl mx-auto px-4 space-y-6 text-sm sm:text-base">
+<main class="max-w-sm mx-auto px-4 py-4 space-y-4">
 
   <!-- ผู้ร่วมจ่าย -->
-  <section>
-    <h2 class="text-base font-semibold mb-3">👥 ผู้ร่วมจ่าย</h2>
-    <div class="space-y-2">
-      <div class="flex items-center gap-2" *ngFor="let payer of payers; let i = index">
-        <mat-form-field appearance="outline" class="flex-1">
-          <input matInput [(ngModel)]="payer.name" placeholder="ชื่อคนที่ {{ i + 1 }}" />
-        </mat-form-field>
-        <button mat-icon-button color="warn" (click)="removePayer(i)" *ngIf="payers.length > 1">
-          <mat-icon>delete</mat-icon>
+  <section class="bg-white rounded-xl p-4 shadow-sm">
+    <h2 class="font-medium mb-3 flex items-center gap-2">
+      <span>👥</span>
+      <span>ผู้ร่วมจ่าย</span>
+    </h2>
+    
+    <div class="space-y-3">
+      <div
+        class="border rounded-lg p-3 relative"
+        *ngFor="let payer of payers; let i = index"
+      >
+        <!-- Delete button -->
+        <button
+          *ngIf="payers.length > 1"
+          (click)="removePayer(i)"
+          class="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs hover:bg-red-600"
+        >
+          ×
         </button>
+
+        <!-- Person number and name -->
+        <div class="flex items-center gap-3 mb-3">
+          <span class="w-7 h-7 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium">
+            {{ i + 1 }}
+          </span>
+          <input
+            [(ngModel)]="payer.name"
+            placeholder="ชื่อ"
+            class="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <!-- Payment details -->
+        <div class="space-y-2">
+          <input
+            [(ngModel)]="payer.scb"
+            placeholder="SCB: xxx-x-xxxxx-x"
+            class="w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <input
+            [(ngModel)]="payer.promptpay"
+            placeholder="PromptPay: เบอร์โทร/บัตรประชาชน"
+            class="w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
       </div>
     </div>
-    <button mat-stroked-button class="mt-3 w-full" (click)="addPayer()">+ เพิ่มคน</button>
+
+    <button
+      (click)="addPayer()"
+      class="w-full mt-3 p-3 border-2 border-dashed border-blue-300 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+    >
+      + เพิ่มคน
+    </button>
   </section>
 
   <!-- รายการอาหาร -->
-  <section>
-    <h2 class="text-base font-semibold mb-3">🍱 รายการอาหาร</h2>
-    <div *ngFor="let item of items; let i = index" class="rounded border border-gray-200 p-4 mb-4 bg-white space-y-3">
-      <mat-form-field appearance="outline" class="w-full">
-        <input matInput [(ngModel)]="item.name" placeholder="ชื่ออาหาร" />
-      </mat-form-field>
-      <mat-form-field appearance="outline" class="w-full">
-        <input matInput type="number" [(ngModel)]="item.price" placeholder="ราคา (บาท)" />
-      </mat-form-field>
-      <mat-form-field appearance="outline" class="w-full">
-        <mat-select [(ngModel)]="item.paidBy" placeholder="ใครจ่าย">
-          <mat-option *ngFor="let payer of payers; trackBy: trackByName" [value]="payer.name">
-            {{ payer.name }}
-          </mat-option>
-        </mat-select>
-      </mat-form-field>
-      <div>
-        <label class="text-xs text-gray-500">หารกับใครบ้าง</label>
-        <div class="flex flex-wrap gap-2 mt-1">
-          <mat-checkbox *ngFor="let payer of payers" [(ngModel)]="item.splitWith[payer.name]">
-            {{ payer.name }}
-          </mat-checkbox>
+  <section class="bg-white rounded-xl p-4 shadow-sm">
+    <h2 class="font-medium mb-3 flex items-center gap-2">
+      <span>🍱</span>
+      <span>รายการอาหาร</span>
+    </h2>
+    
+    <div class="space-y-3">
+      <div
+        *ngFor="let item of items; let i = index"
+        class="border rounded-lg p-3 space-y-3 relative"
+      >
+        <!-- Delete button -->
+        <button
+          (click)="removeItem(i)"
+          class="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs hover:bg-red-600"
+        >
+          ×
+        </button>
+
+        <!-- Item name -->
+        <input
+          [(ngModel)]="item.name"
+          placeholder="ชื่ออาหาร"
+          class="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+
+        <!-- Price and payer -->
+        <div class="grid grid-cols-2 gap-2">
+          <input
+            [(ngModel)]="item.price"
+            type="number"
+            placeholder="ราคา"
+            class="p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <select
+            [(ngModel)]="item.paidBy"
+            class="p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">ใครจ่าย</option>
+            <option *ngFor="let payer of payers; trackBy: trackByName" [value]="payer.name">
+              {{ payer.name }}
+            </option>
+          </select>
+        </div>
+
+        <!-- Split with -->
+        <div>
+          <div class="text-sm text-gray-600 mb-2">หารกับใครบ้าง</div>
+          <div class="grid grid-cols-2 gap-2">
+            <label *ngFor="let payer of payers" class="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                [(ngModel)]="item.splitWith[payer.name]"
+                class="rounded"
+              />
+              {{ payer.name }}
+            </label>
+          </div>
         </div>
       </div>
-      <div class="text-right">
-        <button mat-button color="warn" (click)="removeItem(i)">ลบรายการ</button>
-      </div>
     </div>
-    <button mat-stroked-button class="w-full" (click)="addItem()">+ เพิ่มรายการ</button>
+
+    <button
+      (click)="addItem()"
+      class="w-full mt-3 p-3 border-2 border-dashed border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
+    >
+      + เพิ่มรายการ
+    </button>
   </section>
 
   <!-- สรุปยอด -->
-  <section>
-    <h2 class="text-base font-semibold mb-3">📊 สรุปยอด</h2>
-    <div class="divide-y border border-gray-200 rounded bg-white">
-      <div *ngFor="let payer of payers" class="flex justify-between px-4 py-2">
+  <section class="bg-white rounded-xl p-4 shadow-sm">
+    <h2 class="font-medium mb-3 flex items-center gap-2">
+      <span>📊</span>
+      <span>สรุปยอด</span>
+    </h2>
+    
+    <div class="space-y-2">
+      <div *ngFor="let payer of payers" class="flex justify-between items-center py-2 border-b last:border-b-0">
         <span>{{ payer.name }}</span>
-        <span class="font-medium text-gray-700">
+        <span class="font-medium text-green-600">
           {{ getAmountToPay(payer.name) | number:'1.2-2' }} ฿
         </span>
       </div>
     </div>
   </section>
 
-  <!-- โอนคืน -->
-  <section>
-    <h2 class="text-base font-semibold mb-3">💸 การโอนเงินชดใช้</h2>
-    <div *ngIf="getTransferInstructions().length === 0" class="text-gray-500 italic">
-      ทุกคนจ่ายเท่ากันแล้ว ไม่ต้องโอนเงิน 🎉
+<!-- โอนคืน -->
+<section class="bg-white rounded-xl p-4 shadow-sm">
+  <h2 class="font-medium mb-3 flex items-center gap-2">
+    <span>💸</span>
+    <span>การโอนเงิน</span>
+  </h2>
+  
+  <div *ngIf="getTransferInstructions().length === 0" class="text-gray-500 text-center py-4">
+    ทุกคนจ่ายเท่ากันแล้ว 🎉
+  </div>
+  
+  <div class="space-y-4">
+    <div
+      *ngFor="let t of getTransferInstructions()"
+      class="bg-green-50 border border-green-200 rounded-lg p-4"
+    >
+      <!-- Transfer amount -->
+      <div class="flex justify-between items-center mb-3">
+        <span class="text-sm font-medium">{{ t.from }} → {{ t.to }}</span>
+        <span class="font-bold text-green-700 text-lg">{{ t.amount | number:'1.2-2' }} ฿</span>
+      </div>
+      
+      <!-- Payment information -->
+      <div class="space-y-2 text-sm">
+        <!-- PromptPay -->
+        <div *ngIf="getPayerByName(t.to)?.promptpay" class="bg-white p-2 rounded border">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-blue-600">📱</span>
+            <span class="font-medium text-gray-700">PromptPay</span>
+          </div>
+          <div class="text-gray-800 font-mono">{{ getPayerByName(t.to)?.promptpay }}</div>
+        </div>
+        
+        <!-- SCB -->
+        <div *ngIf="getPayerByName(t.to)?.scb" class="bg-white p-2 rounded border">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-purple-600">🏦</span>
+            <span class="font-medium text-gray-700">SCB</span>
+          </div>
+          <div class="text-gray-800 font-mono">{{ getPayerByName(t.to)?.scb }}</div>
+        </div>
+        
+        <!-- No payment info -->
+        <div *ngIf="!getPayerByName(t.to)?.promptpay && !getPayerByName(t.to)?.scb" 
+             class="text-gray-500 italic">
+          ไม่มีข้อมูลการโอน
+        </div>
+      </div>
     </div>
-    <div *ngFor="let t of getTransferInstructions()" class="flex justify-between px-4 py-2 bg-green-50 border border-green-200 rounded mb-2">
-      <div>{{ t.from }} ➜ {{ t.to }}</div>
-      <div class="font-semibold text-green-800">{{ t.amount | number:'1.2-2' }} ฿</div>
-    </div>
-  </section>
+  </div>
+</section>
 
   <!-- แชร์ลิงก์ -->
   <section>
-    <button mat-raised-button color="primary" class="w-full" (click)="shareLink()">
-      📤 แชร์ลิงก์ให้เพื่อน
+    <button
+      (click)="shareLink()"
+      class="w-full bg-blue-500 text-white py-3 rounded-xl font-medium hover:bg-blue-600 transition-colors"
+    >
+      📤 แชร์ลิงก์
     </button>
   </section>
 
   <!-- ตรวจสอบสลิป -->
-  <section class="mt-6 space-y-2">
-    <h2 class="font-semibold">🧾 ตรวจสอบสลิป</h2>
+  <section class="bg-white rounded-xl p-4 shadow-sm">
+    <h2 class="font-medium mb-3 flex items-center gap-2">
+      <span>🧾</span>
+      <span>ตรวจสอบสลิป</span>
+    </h2>
+    
+    <div class="space-y-3">
+      <input
+        [(ngModel)]="testFrom"
+        placeholder="จาก"
+        class="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+      <input
+        [(ngModel)]="testTo"
+        placeholder="ถึง"
+        class="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+      <input
+        [(ngModel)]="testAmount"
+        type="number"
+        placeholder="จำนวนเงิน"
+        class="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+      
+      <button
+        (click)="verifySlip()"
+        class="w-full bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 transition-colors"
+      >
+        ตรวจสอบ
+      </button>
 
-    <mat-form-field appearance="outline" class="w-full">
-      <input matInput placeholder="ชื่อผู้โอน (จาก)" [(ngModel)]="testFrom" />
-    </mat-form-field>
-
-    <mat-form-field appearance="outline" class="w-full">
-      <input matInput placeholder="ชื่อผู้รับเงิน (ถึง)" [(ngModel)]="testTo" />
-    </mat-form-field>
-
-    <mat-form-field appearance="outline" class="w-full">
-      <input matInput type="number" placeholder="จำนวนเงินที่โอน" [(ngModel)]="testAmount" />
-    </mat-form-field>
-
-    <button mat-raised-button color="accent" (click)="verifySlip()">ตรวจสอบสลิป</button>
-
-    <div *ngIf="slipResult !== null" class="text-sm mt-2 font-medium"
-         [ngClass]="{ 'text-green-600': slipResult, 'text-red-600': !slipResult }">
-      {{ slipResult ? '✅ โอนถูกต้องตามระบบแนะนำ' : '❌ ไม่พบรายการนี้ในคำแนะนำ' }}
+      <div
+        *ngIf="slipResult !== null"
+        class="p-3 rounded-lg text-sm font-medium"
+        [class]="slipResult ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'"
+      >
+        {{ slipResult ? '✅ ถูกต้อง' : '❌ ไม่พบรายการ' }}
+      </div>
     </div>
   </section>
 

@@ -192,6 +192,7 @@ export class SplitPaymentComponent {
     }
   }
 
+
   trackByName(index: number, payer: any) {
     return payer.name;
   }
