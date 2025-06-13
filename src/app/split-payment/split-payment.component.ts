@@ -1,12 +1,15 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { HttpClientModule } from '@angular/common/http';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { ApiService, SlipResult, SlipHistory } from './api.service';
+
 
 interface Payer {
   name: string;
@@ -27,6 +30,7 @@ interface Item {
   imports: [
     CommonModule,
     FormsModule,
+    HttpClientModule,
     MatFormFieldModule,
     MatInputModule,
     MatSelectModule,
@@ -36,7 +40,7 @@ interface Item {
   ],
   templateUrl: './split-payment.component.html'
 })
-export class SplitPaymentComponent {
+export class SplitPaymentComponent implements OnInit {
   payers: Payer[] = [{ name: 'หลง', scb: '', promptpay: '' }];
   items: Item[] = [
     {
@@ -53,12 +57,133 @@ export class SplitPaymentComponent {
   testAmount: number | null = null;
   slipResult: boolean | null = null;
 
+  // ✅ ตัวแปรใหม่สำหรับ API
+  selectedFiles: File[] = [];
+  uploadResults: SlipResult[] = [];
+  slipHistory: SlipHistory[] = [];
+  isLoading = false;
+  autoSaveEnabled = true;
+
+  constructor(private apiService: ApiService) {}
+
+  ngOnInit() {
+    this.loadState();
+    this.loadSlipHistory();
+  }
+
+  // ✅ Load state from backend
+  loadState() {
+    this.apiService.loadState().subscribe({
+      next: (state) => {
+        if (state && state.payers && state.items) {
+          this.payers = state.payers;
+          this.items = state.items;
+        }
+      },
+      error: (error) => {
+        console.error('Failed to load state:', error);
+      }
+    });
+  }
+
+  // ✅ Save state to backend
+  saveState() {
+    if (!this.autoSaveEnabled) return;
+    
+    const state = {
+      payers: this.payers,
+      items: this.items
+    };
+
+    this.apiService.saveState(state).subscribe({
+      next: (response) => {
+        console.log('State saved successfully');
+      },
+      error: (error) => {
+        console.error('Failed to save state:', error);
+      }
+    });
+  }
+
+  // ✅ Load slip history
+  loadSlipHistory() {
+    this.apiService.getSlipHistory().subscribe({
+      next: (history) => {
+        this.slipHistory = history;
+      },
+      error: (error) => {
+        console.error('Failed to load slip history:', error);
+      }
+    });
+  }
+
+  // ✅ Handle file selection
+  onFileSelected(event: any) {
+    const files = Array.from(event.target.files) as File[];
+    this.selectedFiles = files.filter(file => 
+      file.type.startsWith('image/') && file.size < 10 * 1024 * 1024 // Max 10MB
+    );
+  }
+
+  // ✅ Upload slips
+  uploadSlips() {
+    if (this.selectedFiles.length === 0) {
+      alert('กรุณาเลือกไฟล์รูปภาพ');
+      return;
+    }
+
+    this.isLoading = true;
+    this.apiService.uploadSlips(this.selectedFiles).subscribe({
+      next: (response) => {
+        this.uploadResults = response.results;
+        this.loadSlipHistory(); // Refresh history
+        this.selectedFiles = [];
+        this.isLoading = false;
+        
+        // Process valid slips for auto-verification
+        this.processUploadResults(response.results);
+      },
+      error: (error) => {
+        console.error('Upload failed:', error);
+        this.isLoading = false;
+        alert('อัปโหลดล้มเหลว กรุณาลองใหม่');
+      }
+    });
+  }
+
+  // ✅ Process upload results for auto-verification
+  processUploadResults(results: SlipResult[]) {
+    let verifiedCount = 0;
+    
+    results.forEach(result => {
+      if (result.valid && result.amount !== null && result.promptpay) {
+        // Try to match with transfer instructions
+        const transfers = this.getTransferInstructions();
+        const matchingTransfer = transfers.find(t => {
+          const toPayer = this.getPayerByName(t.to);
+          return toPayer?.promptpay === result.promptpay && 
+                 result.amount !== null &&
+                 Math.abs(t.amount - result.amount) < 0.01;
+        });
+
+        if (matchingTransfer) {
+          verifiedCount++;
+        }
+      }
+    });
+
+    if (verifiedCount > 0) {
+      alert(`ตรวจสอบสลิปสำเร็จ ${verifiedCount} รายการ ✅`);
+    }
+  }
+
   addPayer() {
     const newName = 'คนที่ ' + (this.payers.length + 1);
     this.payers.push({ name: newName, scb: '', promptpay: '' });
     this.items.forEach(item => {
       item.splitWith[newName] = false;
     });
+    this.saveState();
   }
 
   removePayer(index: number) {
@@ -68,6 +193,7 @@ export class SplitPaymentComponent {
       if (item.paidBy === nameToRemove) item.paidBy = '';
       delete item.splitWith[nameToRemove];
     });
+    this.saveState();
   }
 
   addItem() {
@@ -79,10 +205,17 @@ export class SplitPaymentComponent {
       paidBy: '',
       splitWith
     });
+    this.saveState();
   }
 
   removeItem(index: number) {
     this.items.splice(index, 1);
+    this.saveState();
+  }
+
+  // ✅ Auto-save when data changes
+  onDataChange() {
+    this.saveState();
   }
 
   getAmountToPay(payerName: string): number {
@@ -152,6 +285,9 @@ export class SplitPaymentComponent {
   }
 
   shareLink() {
+    // Save state before sharing
+    this.saveState();
+    
     const url = window.location.href;
     const balances = this.getNetBalances();
 
@@ -191,7 +327,6 @@ export class SplitPaymentComponent {
       alert('กรุณากรอกข้อมูลให้ครบ');
     }
   }
-
 
   trackByName(index: number, payer: any) {
     return payer.name;

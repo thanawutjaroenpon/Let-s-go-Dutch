@@ -2,11 +2,14 @@ import { bootstrapApplication } from '@angular/platform-browser';
 import { appConfig } from './app/app.config';
 import { AppComponent } from './app/app.component';
 import { provideAnimations } from '@angular/platform-browser/animations';
+import { importProvidersFrom } from '@angular/core';
+import { HttpClientModule } from '@angular/common/http';
 
 bootstrapApplication(AppComponent, {
   ...appConfig,
   providers: [
     ...(appConfig.providers || []),
-    provideAnimations() // ✅ เพิ่มตรงนี้เพื่อรองรับ Angular Material animations
+    provideAnimations(), 
+    importProvidersFrom(HttpClientModule)
   ]
 }).catch((err) => console.error(err));
