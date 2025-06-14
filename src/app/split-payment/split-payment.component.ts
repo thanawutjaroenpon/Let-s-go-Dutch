@@ -52,7 +52,7 @@ export class SplitPaymentComponent implements OnInit {
   isLoading = false;
   autoSaveEnabled = true;
 
-  constructor(private apiService: ApiService) {}
+  constructor(private apiService: ApiService) { }
 
   ngOnInit() {
     this.loadState();
@@ -73,7 +73,7 @@ export class SplitPaymentComponent implements OnInit {
 
   saveState() {
     if (!this.autoSaveEnabled) return;
-    
+
     const state = { payers: this.payers, items: this.items };
     this.apiService.saveState(state).subscribe({
       next: () => console.log('State saved successfully'),
@@ -90,7 +90,7 @@ export class SplitPaymentComponent implements OnInit {
 
   onFileSelected(event: any) {
     const files = Array.from(event.target.files) as File[];
-    this.selectedFiles = files.filter(file => 
+    this.selectedFiles = files.filter(file =>
       file.type.startsWith('image/') && file.size < 10 * 1024 * 1024
     );
   }
@@ -120,7 +120,7 @@ export class SplitPaymentComponent implements OnInit {
 
   processUploadResults(results: SlipResult[]) {
     let verifiedCount = results.filter(r => r.verified).length;
-    
+
     let validButUnverified = results.filter(r => r.valid && !r.verified).length;
 
     if (verifiedCount > 0) {
@@ -261,18 +261,18 @@ export class SplitPaymentComponent implements OnInit {
   }
 
   getVerifiedTransfers(): Set<string> {
-  const verifiedTransfers = new Set<string>();
-  this.slipHistory.forEach(slip => {
-    if (slip.verified && slip.issuer_name && slip.receiver_name && slip.amount) {
-      verifiedTransfers.add(`${slip.issuer_name}->${slip.receiver_name}->${slip.amount}`);
-    }
-  });
-  return verifiedTransfers;
-}
+    const verifiedTransfers = new Set<string>();
+    this.slipHistory.forEach(slip => {
+      if (slip.verified && slip.issuer_name && slip.receiver_name && slip.amount) {
+        verifiedTransfers.add(`${slip.issuer_name}->${slip.receiver_name}->${slip.amount}`);
+      }
+    });
+    return verifiedTransfers;
+  }
 
-isTransferVerified(from: string, to: string, amount: number): boolean {
-  return this.getVerifiedTransfers().has(`${from}->${to}->${amount}`);
-}
+  isTransferVerified(from: string, to: string, amount: number): boolean {
+    return this.getVerifiedTransfers().has(`${from}->${to}->${amount}`);
+  }
 
   verifySlip() {
     if (this.testFrom && this.testTo && this.testAmount !== null) {
