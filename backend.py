@@ -70,7 +70,6 @@ def extract_promptpay_info(qr_string: str):
     except:
         return None, None
 
-# 🧠 Helper: extract text using iApp OCR API
 async def extract_text_from_image_api(file: UploadFile):
     api_url = "https://api.iapp.co.th/ocr/v3/receipt/file"
     headers = {"apikey": "demo"}
