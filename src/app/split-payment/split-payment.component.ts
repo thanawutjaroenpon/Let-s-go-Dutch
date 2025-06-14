@@ -10,7 +10,6 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiService, SlipResult, SlipHistory } from './api.service';
 
-
 interface Payer {
   name: string;
   scb?: string;
@@ -41,23 +40,12 @@ interface Item {
   templateUrl: './split-payment.component.html'
 })
 export class SplitPaymentComponent implements OnInit {
-  payers: Payer[] = [{ name: 'หลง', scb: '', promptpay: '' }];
-  items: Item[] = [
-    {
-      name: '',
-      price: 0,
-      paidBy: '',
-      splitWith: { 'หลง': false }
-    }
-  ];
-
-  // ✅ ตัวแปรสำหรับทดสอบสลิป
+  payers: Payer[] = [];
+  items: Item[] = [];
   testFrom = '';
   testTo = '';
   testAmount: number | null = null;
   slipResult: boolean | null = null;
-
-  // ✅ ตัวแปรใหม่สำหรับ API
   selectedFiles: File[] = [];
   uploadResults: SlipResult[] = [];
   slipHistory: SlipHistory[] = [];
@@ -71,7 +59,6 @@ export class SplitPaymentComponent implements OnInit {
     this.loadSlipHistory();
   }
 
-  // ✅ Load state from backend
   loadState() {
     this.apiService.loadState().subscribe({
       next: (state) => {
@@ -80,52 +67,34 @@ export class SplitPaymentComponent implements OnInit {
           this.items = state.items;
         }
       },
-      error: (error) => {
-        console.error('Failed to load state:', error);
-      }
+      error: (error) => console.error('Failed to load state:', error)
     });
   }
 
-  // ✅ Save state to backend
   saveState() {
     if (!this.autoSaveEnabled) return;
     
-    const state = {
-      payers: this.payers,
-      items: this.items
-    };
-
+    const state = { payers: this.payers, items: this.items };
     this.apiService.saveState(state).subscribe({
-      next: (response) => {
-        console.log('State saved successfully');
-      },
-      error: (error) => {
-        console.error('Failed to save state:', error);
-      }
+      next: () => console.log('State saved successfully'),
+      error: (error) => console.error('Failed to save state:', error)
     });
   }
 
-  // ✅ Load slip history
   loadSlipHistory() {
     this.apiService.getSlipHistory().subscribe({
-      next: (history) => {
-        this.slipHistory = history;
-      },
-      error: (error) => {
-        console.error('Failed to load slip history:', error);
-      }
+      next: (history) => this.slipHistory = history,
+      error: (error) => console.error('Failed to load slip history:', error)
     });
   }
 
-  // ✅ Handle file selection
   onFileSelected(event: any) {
     const files = Array.from(event.target.files) as File[];
     this.selectedFiles = files.filter(file => 
-      file.type.startsWith('image/') && file.size < 10 * 1024 * 1024 // Max 10MB
+      file.type.startsWith('image/') && file.size < 10 * 1024 * 1024
     );
   }
 
-  // ✅ Upload slips
   uploadSlips() {
     if (this.selectedFiles.length === 0) {
       alert('กรุณาเลือกไฟล์รูปภาพ');
@@ -136,11 +105,9 @@ export class SplitPaymentComponent implements OnInit {
     this.apiService.uploadSlips(this.selectedFiles).subscribe({
       next: (response) => {
         this.uploadResults = response.results;
-        this.loadSlipHistory(); // Refresh history
+        this.loadSlipHistory();
         this.selectedFiles = [];
         this.isLoading = false;
-        
-        // Process valid slips for auto-verification
         this.processUploadResults(response.results);
       },
       error: (error) => {
@@ -151,38 +118,22 @@ export class SplitPaymentComponent implements OnInit {
     });
   }
 
-  // ✅ Process upload results for auto-verification
   processUploadResults(results: SlipResult[]) {
-    let verifiedCount = 0;
+    let verifiedCount = results.filter(r => r.verified).length;
     
-    results.forEach(result => {
-      if (result.valid && result.amount !== null && result.promptpay) {
-        // Try to match with transfer instructions
-        const transfers = this.getTransferInstructions();
-        const matchingTransfer = transfers.find(t => {
-          const toPayer = this.getPayerByName(t.to);
-          return toPayer?.promptpay === result.promptpay && 
-                 result.amount !== null &&
-                 Math.abs(t.amount - result.amount) < 0.01;
-        });
-
-        if (matchingTransfer) {
-          verifiedCount++;
-        }
-      }
-    });
+    let validButUnverified = results.filter(r => r.valid && !r.verified).length;
 
     if (verifiedCount > 0) {
       alert(`ตรวจสอบสลิปสำเร็จ ${verifiedCount} รายการ ✅`);
+    } else if (validButUnverified > 0) {
+      alert('⚠️ พบสลิปแต่ยังไม่ตรงกับรายการโอน กรุณาตรวจสอบชื่อผู้โอนและจำนวนเงิน');
     }
   }
 
   addPayer() {
     const newName = 'คนที่ ' + (this.payers.length + 1);
     this.payers.push({ name: newName, scb: '', promptpay: '' });
-    this.items.forEach(item => {
-      item.splitWith[newName] = false;
-    });
+    this.items.forEach(item => item.splitWith[newName] = false);
     this.saveState();
   }
 
@@ -199,12 +150,7 @@ export class SplitPaymentComponent implements OnInit {
   addItem() {
     const splitWith: Record<string, boolean> = {};
     this.payers.forEach(p => splitWith[p.name] = false);
-    this.items.push({
-      name: '',
-      price: 0,
-      paidBy: '',
-      splitWith
-    });
+    this.items.push({ name: '', price: 0, paidBy: '', splitWith });
     this.saveState();
   }
 
@@ -213,7 +159,6 @@ export class SplitPaymentComponent implements OnInit {
     this.saveState();
   }
 
-  // ✅ Auto-save when data changes
   onDataChange() {
     this.saveState();
   }
@@ -285,23 +230,18 @@ export class SplitPaymentComponent implements OnInit {
   }
 
   shareLink() {
-    // Save state before sharing
     this.saveState();
-    
     const url = window.location.href;
     const balances = this.getNetBalances();
 
     const lines = ['Go-Dutch แชร์ค่าอาหาร 🍽', '', '📊 สรุปยอด'];
-
     for (const [name, amount] of Object.entries(balances)) {
       const sign = amount >= 0 ? '' : '-';
       lines.push(`${name}: ${sign}${Math.abs(amount).toFixed(2)} ฿`);
     }
-
     lines.push('', `📤 ${url}`);
 
     const text = lines.join('\n');
-
     if (navigator.share) {
       navigator.share({ title: 'Go-Dutch แชร์บิล', text, url })
         .catch(err => console.error('❌ แชร์ล้มเหลว', err));

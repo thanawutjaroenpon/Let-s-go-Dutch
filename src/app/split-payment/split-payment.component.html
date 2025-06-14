@@ -20,7 +20,6 @@
         class="border rounded-lg p-3 relative"
         *ngFor="let payer of payers; let i = index"
       >
-        <!-- Delete button -->
         <button
           *ngIf="payers.length > 1"
           (click)="removePayer(i)"
@@ -29,7 +28,6 @@
           ×
         </button>
 
-        <!-- Person number and name -->
         <div class="flex items-center gap-3 mb-3">
           <span class="w-7 h-7 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium">
             {{ i + 1 }}
@@ -42,7 +40,6 @@
           />
         </div>
 
-        <!-- Payment details -->
         <div class="space-y-2">
           <input
             [(ngModel)]="payer.scb"
@@ -80,7 +77,6 @@
         *ngFor="let item of items; let i = index"
         class="border rounded-lg p-3 space-y-3 relative"
       >
-        <!-- Delete button -->
         <button
           (click)="removeItem(i)"
           class="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs hover:bg-red-600"
@@ -88,7 +84,6 @@
           ×
         </button>
 
-        <!-- Item name -->
         <input
           [(ngModel)]="item.name"
           (ngModelChange)="onDataChange()"
@@ -96,7 +91,6 @@
           class="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
-        <!-- Price and payer -->
         <div class="grid grid-cols-2 gap-2">
           <input
             [(ngModel)]="item.price"
@@ -117,7 +111,6 @@
           </select>
         </div>
 
-        <!-- Split with -->
         <div>
           <div class="text-sm text-gray-600 mb-2">หารกับใครบ้าง</div>
           <div class="grid grid-cols-2 gap-2">
@@ -176,15 +169,12 @@
         *ngFor="let t of getTransferInstructions()"
         class="bg-green-50 border border-green-200 rounded-lg p-4"
       >
-        <!-- Transfer amount -->
         <div class="flex justify-between items-center mb-3">
           <span class="text-sm font-medium">{{ t.from }} → {{ t.to }}</span>
           <span class="font-bold text-green-700 text-lg">{{ t.amount | number:'1.2-2' }} ฿</span>
         </div>
         
-        <!-- Payment information -->
         <div class="space-y-2 text-sm">
-          <!-- PromptPay -->
           <div *ngIf="getPayerByName(t.to)?.promptpay" class="bg-white p-2 rounded border">
             <div class="flex items-center gap-2 mb-1">
               <span class="text-blue-600">📱</span>
@@ -193,7 +183,6 @@
             <div class="text-gray-800 font-mono">{{ getPayerByName(t.to)?.promptpay }}</div>
           </div>
           
-          <!-- SCB -->
           <div *ngIf="getPayerByName(t.to)?.scb" class="bg-white p-2 rounded border">
             <div class="flex items-center gap-2 mb-1">
               <span class="text-purple-600">🏦</span>
@@ -202,7 +191,6 @@
             <div class="text-gray-800 font-mono">{{ getPayerByName(t.to)?.scb }}</div>
           </div>
           
-          <!-- No payment info -->
           <div *ngIf="!getPayerByName(t.to)?.promptpay && !getPayerByName(t.to)?.scb" 
                class="text-gray-500 italic">
             ไม่มีข้อมูลการโอน
@@ -212,7 +200,7 @@
     </div>
   </section>
 
-  <!-- 🆕 อัปโหลดสลิป -->
+  <!-- อัปโหลดสลิป -->
   <section class="bg-white rounded-xl p-4 shadow-sm">
     <h2 class="font-medium mb-3 flex items-center gap-2">
       <span>📷</span>
@@ -220,7 +208,6 @@
     </h2>
     
     <div class="space-y-3">
-      <!-- File input -->
       <input
         type="file"
         #fileInput
@@ -230,12 +217,10 @@
         class="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
       
-      <!-- Selected files info -->
       <div *ngIf="selectedFiles.length > 0" class="text-sm text-gray-600">
         เลือกไฟล์แล้ว {{ selectedFiles.length }} ไฟล์
       </div>
       
-      <!-- Upload button -->
       <button
         (click)="uploadSlips()"
         [disabled]="selectedFiles.length === 0 || isLoading"
@@ -245,12 +230,11 @@
         <span *ngIf="isLoading">กำลังประมวลผล...</span>
       </button>
       
-      <!-- Upload results -->
       <div *ngIf="uploadResults.length > 0" class="space-y-2 max-h-40 overflow-y-auto">
         <div
           *ngFor="let result of uploadResults"
           class="p-2 rounded border text-sm"
-          [class]="result.valid ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'"
+          [class]="result.verified ? 'bg-green-50 border-green-200' : (result.valid ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200')"
         >
           <div class="font-medium">{{ result.filename }}</div>
           <div *ngIf="result.valid" class="text-green-700">
@@ -259,12 +243,18 @@
           <div *ngIf="!result.valid" class="text-red-700">
             ❌ ไม่สามารถอ่าน QR Code ได้
           </div>
+          <div *ngIf="result.verified" class="text-green-700 font-medium">
+            ✔️ ตรวจสอบแล้ว: {{ result.issuer_name }} → {{ result.receiver_name }}
+          </div>
+          <div *ngIf="result.valid && !result.verified" class="text-yellow-700">
+            ⚠️ ยังไม่ตรงกับรายการโอน
+          </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- 🆕 ประวัติสลิป -->
+  <!-- ประวัติสลิป -->
   <section class="bg-white rounded-xl p-4 shadow-sm" *ngIf="slipHistory.length > 0">
     <h2 class="font-medium mb-3 flex items-center gap-2">
       <span>📋</span>
@@ -275,7 +265,7 @@
       <div
         *ngFor="let slip of slipHistory.slice(0, 5)"
         class="p-2 rounded border text-sm"
-        [class]="slip.status ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'"
+        [class]="slip.verified ? 'bg-green-50 border-green-200' : (slip.status ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200')"
       >
         <div class="flex justify-between items-start">
           <div>
@@ -285,6 +275,9 @@
             </div>
             <div *ngIf="!slip.status" class="text-red-700">
               ไม่สามารถประมวลผลได้
+            </div>
+            <div *ngIf="slip.verified" class="text-green-700 font-medium">
+              ✔️ ตรวจสอบแล้ว: {{ slip.issuer_name }} → {{ slip.receiver_name }}
             </div>
           </div>
           <div class="text-xs text-gray-500">
@@ -304,47 +297,4 @@
       📤 แชร์ลิงก์
     </button>
   </section>
-
-  <!-- ตรวจสอบสลิป
-  <section class="bg-white rounded-xl p-4 shadow-sm">
-    <h2 class="font-medium mb-3 flex items-center gap-2">
-      <span>🧾</span>
-      <span>ตรวจสอบสลิป</span>
-    </h2>
-    
-    <div class="space-y-3">
-      <input
-        [(ngModel)]="testFrom"
-        placeholder="จาก"
-        class="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-      <input
-        [(ngModel)]="testTo"
-        placeholder="ถึง"
-        class="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-      <input
-        [(ngModel)]="testAmount"
-        type="number"
-        placeholder="จำนวนเงิน"
-        class="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-      
-      <button
-        (click)="verifySlip()"
-        class="w-full bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 transition-colors"
-      >
-        ตรวจสอบ
-      </button>
-
-      <div
-        *ngIf="slipResult !== null"
-        class="p-3 rounded-lg text-sm font-medium"
-        [class]="slipResult ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'"
-      >
-        {{ slipResult ? '✅ ถูกต้อง' : '❌ ไม่พบรายการ' }}
-      </div>
-    </div>
-  </section> -->
-
 </main>

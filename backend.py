@@ -1,24 +1,43 @@
-from fastapi import FastAPI, UploadFile, File, Request
+from fastapi import FastAPI, UploadFile, File, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, Numeric, Boolean, DateTime, func, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import JSONB
-from pyzbar.pyzbar import decode
 from PIL import Image
 import io
-import re
 import time
 import httpx
 from datetime import datetime
+from typing import Optional, Dict, Any
 
-# 🔌 Database config
+# Database config
 DATABASE_URL = "postgresql://postgres:p%40assw0rd@localhost:5433/dutch"
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
-# 🌐 FastAPI app setup
+# Database models
+class SlipHistory(Base):
+    __tablename__ = 'slip_history'
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String)
+    amount = Column(Numeric)
+    status = Column(Boolean)
+    verified = Column(Boolean, default=False)
+    issuer_name = Column(String)
+    receiver_name = Column(String)
+    created_at = Column(DateTime, server_default=func.now())
+
+class SharedState(Base):
+    __tablename__ = 'shared_state'
+    id = Column(Integer, primary_key=True)
+    data = Column(JSONB)
+
+# Create all tables (won't recreate if they exist)
+Base.metadata.create_all(bind=engine)
+
+# FastAPI app setup
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -27,164 +46,145 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 📦 Database models
-class SlipHistory(Base):
-    __tablename__ = 'slip_history'
-    id = Column(Integer, primary_key=True, index=True)
-    filename = Column(String)
-    amount = Column(Numeric)
-    promptpay = Column(String)
-    status = Column(Boolean)
-    created_at = Column(DateTime, server_default=func.now())
-
-class SharedState(Base):
-    __tablename__ = 'shared_state'
-    id = Column(Integer, primary_key=True)
-    data = Column(JSONB)
-
-Base.metadata.create_all(bind=engine)
-
-# 🧠 Helper: decode QR code
-def decode_qr_from_image(img_data):
-    image = Image.open(io.BytesIO(img_data)).convert('RGB')
-    decoded = decode(image)
-    for d in decoded:
-        data = d.data.decode()
-        if "000201" in data and "5303" in data:
-            return data
-    return None
-
-# 🧠 Helper: extract PromptPay phone & amount
-def extract_promptpay_info(qr_string: str):
-    try:
-        phone = None
-        amount = None
-        if "0113" in qr_string:
-            idx = qr_string.find("0113") + 4
-            phone = qr_string[idx:idx+13]
-        if "54" in qr_string:
-            idx = qr_string.find("54") + 2
-            length = int(qr_string[idx:idx+2])
-            amount = qr_string[idx+2:idx+2+length]
-        return phone, float(amount) if amount else None
-    except:
-        return None, None
-
 async def extract_text_from_image_api(file: UploadFile):
     api_url = "https://api.iapp.co.th/ocr/v3/receipt/file"
-    headers = {"apikey": "demo"}
+    headers = {"apikey": "GZY8mo87ZiEqeqZklCOrNjOgAnqBfO1T"}
     
-    async with httpx.AsyncClient() as client:
-        files = {
-            "file": (file.filename, await file.read(), "image/jpeg"),
-            "return_image": (None, "false")
-        }
-        response = await client.post(api_url, headers=headers, files=files)
-        return response.json()
+    try:
+        async with httpx.AsyncClient() as client:
+            files = {
+                "file": (file.filename, await file.read(), "image/jpeg"),
+                "return_image": (None, "false")
+            }
+            response = await client.post(api_url, headers=headers, files=files)
+            return response.json()
+    except Exception as e:
+        print(f"Error calling OCR API: {e}")
+        return {}
 
 def parse_kbank_slip_text(ocr_data: dict):
-    """Parse KBank slip text from iApp OCR response"""
     result = {
         "invoiceType": "สลิปโอนเงิน",
-        "invoiceBook": None,
-        "invoiceID": None,
-        "invoiceDate": None,
-        "purchaseOrderID": None,
         "issuerName": None,
-        "issuerAddress": None,
-        "issuerTaxID": None,
-        "issuerPhone": None,
         "customerName": None,
-        "customerAddress": None,
-        "customerTaxID": None,
-        "customerPhone": None,
-        "items": [],
-        "totalCost": None,
-        "discount": 0,
-        "totalCostAfterDiscount": None,
-        "vat": 0,
         "grandTotal": None
     }
 
-    # Extract from iApp OCR response
     if 'processed' in ocr_data:
         processed = ocr_data['processed']
-        
-        # Map fields from iApp response to our structure
-        result['invoiceID'] = processed.get('invoiceID')
-        result['invoiceDate'] = processed.get('invoiceDate')
         result['issuerName'] = processed.get('issuerName')
         result['customerName'] = processed.get('customerName')
-        result['issuerTaxID'] = processed.get('issuerTaxID')
-        result['customerTaxID'] = processed.get('customerTaxID')
         
-        # Handle amount fields
         if 'grandTotal' in processed:
-            amount = float(processed['grandTotal'])
-            result['grandTotal'] = amount
-            result['totalCost'] = amount
-            result['totalCostAfterDiscount'] = amount
+            try:
+                amount = float(processed['grandTotal'])
+                result['grandTotal'] = amount
+            except (ValueError, TypeError):
+                result['grandTotal'] = None
 
     return result
 
-# 📤 API: Upload slip images (QR decode + OCR)
+def verify_slip_payment(issuer_name: str, receiver_name: str, amount: float, session) -> bool:
+    if not issuer_name or not receiver_name or not amount:
+        return False
+
+    state = session.query(SharedState).order_by(SharedState.id.desc()).first()
+    if not state or not state.data:
+        return False
+
+    payers = state.data.get('payers', [])
+    payer_names = [payer['name'] for payer in payers]
+    
+    # Check if both names exist in payers
+    if issuer_name not in payer_names or receiver_name not in payer_names:
+        return False
+
+    # Calculate net balances
+    net_balances = {payer['name']: 0 for payer in payers}
+
+    for item in state.data.get('items', []):
+        split_names = [name for name, checked in item['splitWith'].items() if checked]
+        if split_names:
+            share = item['price'] / len(split_names)
+            for name in split_names:
+                net_balances[name] += share
+        
+        if item['paidBy']:
+            net_balances[item['paidBy']] -= item['price']
+
+    # Check if payment matches expected transfer
+    expected_amount = abs(net_balances.get(receiver_name, 0))
+    return abs(expected_amount - amount) < 0.01
+
+# API endpoints
 @app.post("/api/slip/upload")
 async def upload_slips(files: list[UploadFile] = File(...)):
     session = SessionLocal()
     results = []
 
     for file in files:
-        start_time = time.time()
-        content = await file.read()
-        
-        # QR code processing
-        qr_data = decode_qr_from_image(content)
-        phone, amount = extract_promptpay_info(qr_data) if qr_data else (None, None)
-        is_valid = phone is not None and amount is not None
-        
-        # Reset file pointer after reading for QR code
-        await file.seek(0)
-        
-        # OCR processing via API
-        ocr_data = await extract_text_from_image_api(file)
-        processed_data = parse_kbank_slip_text(ocr_data)
-        
-        # If we found amount from QR but not from OCR, use QR amount
-        if amount is not None and processed_data.get("grandTotal") is None:
-            processed_data["grandTotal"] = amount
-            processed_data["totalCost"] = amount
-            processed_data["totalCostAfterDiscount"] = amount
+        try:
+            start_time = time.time()
+            
+            # OCR processing only (no QR code)
+            ocr_data = await extract_text_from_image_api(file)
+            processed_data = parse_kbank_slip_text(ocr_data)
+            
+            # Get details from OCR
+            amount = processed_data.get("grandTotal")
+            issuer_name = processed_data.get("issuerName")
+            receiver_name = processed_data.get("customerName")
+            
+            # Validate slip
+            is_valid = amount is not None
+            is_verified = False
+            
+            if amount is not None and issuer_name and receiver_name:
+                is_verified = verify_slip_payment(
+                    issuer_name=issuer_name,
+                    receiver_name=receiver_name,
+                    amount=amount,
+                    session=session
+                )
 
-        # Save to DB
-        slip = SlipHistory(
-            filename=file.filename,
-            amount=amount if amount else processed_data.get("grandTotal"),
-            promptpay=phone,
-            status=is_valid
-        )
-        session.add(slip)
-        session.commit()
+            # Save to database
+            slip = SlipHistory(
+                filename=file.filename,
+                amount=amount,
+                status=is_valid,
+                verified=is_verified,
+                issuer_name=issuer_name,
+                receiver_name=receiver_name
+            )
+            session.add(slip)
+            session.commit()
 
-        process_time = int((time.time() - start_time) * 1000)
-        
-        results.append({
-            "message": "success",
-            "raw": {
-                "qr_data": qr_data,
-                "ocr_data": ocr_data
-            },
-            "processed": processed_data,
-            "template": "receipt",
-            "iapp": {
-                "page": 1,
-                "char": len(str(ocr_data))  # Approximate character count
-            },
-            "process_ms": process_time
-        })
+            process_time = int((time.time() - start_time) * 1000)
+            
+            results.append({
+                "filename": file.filename,
+                "valid": is_valid,
+                "verified": is_verified,
+                "amount": amount,
+                "issuer_name": issuer_name,
+                "receiver_name": receiver_name,
+                "process_ms": process_time
+            })
+
+        except Exception as e:
+            print(f"Error processing file {file.filename}: {e}")
+            session.rollback()
+            results.append({
+                "filename": file.filename,
+                "error": str(e),
+                "valid": False,
+                "verified": False
+            })
+        finally:
+            await file.close()
 
     return {"results": results}
 
-# 📥 API: Get recent slips
 @app.get("/api/slip/history")
 def get_slip_history():
     session = SessionLocal()
@@ -192,28 +192,42 @@ def get_slip_history():
     return [{
         "filename": s.filename,
         "amount": float(s.amount) if s.amount else None,
-        "promptpay": s.promptpay,
         "status": s.status,
+        "verified": s.verified,
+        "issuer_name": s.issuer_name,
+        "receiver_name": s.receiver_name,
         "created_at": s.created_at.isoformat()
     } for s in slips]
 
-# 🧠 API: Save shared state
 @app.post("/api/state/save")
 async def save_state(request: Request):
     session = SessionLocal()
-    payload = await request.json()
+    try:
+        payload = await request.json()
+        
+        # Clear existing state
+        session.query(SharedState).delete()
+        
+        # Save new state
+        state = SharedState(data=payload)
+        session.add(state)
+        session.commit()
+        return {"status": "ok"}
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        session.close()
 
-    session.query(SharedState).delete()
-    session.commit()
-
-    state = SharedState(data=payload)
-    session.add(state)
-    session.commit()
-    return {"status": "ok"}
-
-# 📤 API: Load shared state
 @app.get("/api/state/load")
 def load_state():
     session = SessionLocal()
-    latest = session.query(SharedState).order_by(SharedState.id.desc()).first()
-    return latest.data if latest else {}
+    try:
+        latest = session.query(SharedState).order_by(SharedState.id.desc()).first()
+        return latest.data if latest else {}
+    finally:
+        session.close()
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
