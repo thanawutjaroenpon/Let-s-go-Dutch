@@ -260,6 +260,20 @@ export class SplitPaymentComponent implements OnInit {
     );
   }
 
+  getVerifiedTransfers(): Set<string> {
+  const verifiedTransfers = new Set<string>();
+  this.slipHistory.forEach(slip => {
+    if (slip.verified && slip.issuer_name && slip.receiver_name && slip.amount) {
+      verifiedTransfers.add(`${slip.issuer_name}->${slip.receiver_name}->${slip.amount}`);
+    }
+  });
+  return verifiedTransfers;
+}
+
+isTransferVerified(from: string, to: string, amount: number): boolean {
+  return this.getVerifiedTransfers().has(`${from}->${to}->${amount}`);
+}
+
   verifySlip() {
     if (this.testFrom && this.testTo && this.testAmount !== null) {
       this.slipResult = this.checkSlipValid(this.testFrom.trim(), this.testTo.trim(), this.testAmount);
