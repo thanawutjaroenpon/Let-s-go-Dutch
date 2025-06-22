@@ -1,23 +1,34 @@
+import uvicorn
 from fastapi import FastAPI, UploadFile, File, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, Integer, String, Numeric, Boolean, DateTime, func, Text
+from sqlalchemy import create_engine, Column, Integer, String, Numeric, Boolean, DateTime, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import JSONB
-from PIL import Image
-import io
 import time
-import httpx
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional
 
-# Database config
+# --- OCR Imports ---
+import easyocr
+import cv2
+import re
+import numpy as np
+import io
+
+# --- OCR Model Initialization (Load once on startup) ---
+print("Initializing EasyOCR Reader... This may take a moment.")
+# Initialize the reader. Set gpu=False if you are not using a GPU.
+reader = easyocr.Reader(['th', 'en'], gpu=False)
+print("EasyOCR Reader initialized.")
+
+# --- Database Configuration ---
 DATABASE_URL = "postgresql://postgres:p%40assw0rd@localhost:5433/dutch"
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
-# Database models
+# --- Database Models ---
 class SlipHistory(Base):
     __tablename__ = 'slip_history'
     id = Column(Integer, primary_key=True, index=True)
@@ -34,10 +45,10 @@ class SharedState(Base):
     id = Column(Integer, primary_key=True)
     data = Column(JSONB)
 
-# Create all tables (won't recreate if they exist)
+# Create all database tables if they don't exist
 Base.metadata.create_all(bind=engine)
 
-# FastAPI app setup
+# --- FastAPI App Setup ---
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -46,23 +57,119 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# --- Local OCR Logic (from input_file_0.py, adapted for FastAPI) ---
+
+def extract_value_from_text(text, keyword):
+    """
+    Checks if a keyword is in the text and extracts the value that follows it,
+    all within the same string.
+    """
+    if keyword in text:
+        parts = text.split(keyword)
+        if len(parts) > 1:
+            value = parts[1].strip()
+            value = re.sub(r'^\s*[:\s-]\s*', '', value)
+            if value:
+                return value
+    return None
+
+def find_info_on_slip(image: np.ndarray):
+    """
+    Performs OCR on a bank slip image (as a numpy array) and extracts information.
+    The easyocr.Reader (`reader`) is passed in to reuse the loaded model.
+    """
+    print("Reading text from the image using EasyOCR...")
+    results = reader.readtext(image, paragraph=False, detail=1)
+
+    sender_name, receiver_name, total_amount = None, None, None
+    keyword_map = [
+        (("จาก",), 'sender'),
+        (("ไปยัง", "ถึง"), 'receiver'),
+        (("จำนวนเงิน", "ยอดชำระ", "ยอดรวม"), 'amount')
+    ]
+
+    # Primary Strategy: Find keyword and then find the value
+    for i, (bbox, text, prob) in enumerate(results):
+        cleaned_text = text.strip()
+        for keywords, info_type in keyword_map:
+            for keyword in keywords:
+                if keyword in cleaned_text:
+                    value = None
+                    extracted_value = extract_value_from_text(cleaned_text, keyword)
+                    if extracted_value:
+                        value = extracted_value
+                    elif i + 1 < len(results):
+                        value = results[i + 1][1].strip()
+                        
+                    if value:
+                        if info_type == 'sender' and not sender_name:
+                            sender_name = value
+                        elif info_type == 'receiver' and not receiver_name:
+                            receiver_name = value
+                        elif info_type == 'amount' and not total_amount:
+                            amount_match = re.search(r'[\d,.]+', value)
+                            if amount_match:
+                                try:
+                                    cleaned_amount = amount_match.group(0).replace(',', '')
+                                    total_amount = float(cleaned_amount)
+                                except (ValueError, IndexError):
+                                    pass
+
+    # Fallback Strategy: Use prefixes if names are missing
+    if not sender_name or not receiver_name:
+        personal_prefixes = ['นาย', 'นาง', 'น.ส.', 'นางสาว', 'บจก.', 'หจก.']
+        found_names = []
+        for (bbox, text, prob) in results:
+            for prefix in personal_prefixes:
+                if text.strip().startswith(prefix):
+                    found_names.append(text.strip())
+                    break
+        
+        if not sender_name and len(found_names) > 0:
+            sender_name = found_names[0]
+        if not receiver_name and len(found_names) > 1 and found_names[1] != sender_name:
+            receiver_name = found_names[1]
+
+    return sender_name, receiver_name, total_amount
+
+
 async def extract_text_from_image_api(file: UploadFile):
-    api_url = "https://api.iapp.co.th/ocr/v3/receipt/file"
-    headers = {"apikey": "GZY8mo87ZiEqeqZklCOrNjOgAnqBfO1T"}
-    
+    """
+    Replaces the external API call with the local EasyOCR system.
+    """
     try:
-        async with httpx.AsyncClient() as client:
-            files = {
-                "file": (file.filename, await file.read(), "image/jpeg"),
-                "return_image": (None, "false")
+        # Read image from upload file into memory
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if image is None:
+            print(f"Error: Could not decode image {file.filename}.")
+            return {}
+
+        # Process the image with our local OCR function
+        sender, receiver, amount = find_info_on_slip(image)
+
+        # Return data in the format expected by the next function
+        return {
+            "processed": {
+                "issuerName": sender,
+                "customerName": receiver,
+                "grandTotal": amount
             }
-            response = await client.post(api_url, headers=headers, files=files)
-            return response.json()
+        }
     except Exception as e:
-        print(f"Error calling OCR API: {e}")
+        print(f"Error in local OCR processing: {e}")
         return {}
 
+
+# --- Existing Application Logic (from input_file_1.py) ---
+
 def parse_kbank_slip_text(ocr_data: dict):
+    """
+    Parses the output from our OCR function.
+    """
     result = {
         "invoiceType": "สลิปโอนเงิน",
         "issuerName": None,
@@ -75,7 +182,7 @@ def parse_kbank_slip_text(ocr_data: dict):
         result['issuerName'] = processed.get('issuerName')
         result['customerName'] = processed.get('customerName')
         
-        if 'grandTotal' in processed:
+        if 'grandTotal' in processed and processed['grandTotal'] is not None:
             try:
                 amount = float(processed['grandTotal'])
                 result['grandTotal'] = amount
@@ -95,13 +202,10 @@ def verify_slip_payment(issuer_name: str, receiver_name: str, amount: float, ses
     payers = state.data.get('payers', [])
     payer_names = [payer['name'] for payer in payers]
     
-    # Check if both names exist in payers
     if issuer_name not in payer_names or receiver_name not in payer_names:
         return False
 
-    # Calculate net balances
     net_balances = {payer['name']: 0 for payer in payers}
-
     for item in state.data.get('items', []):
         split_names = [name for name, checked in item['splitWith'].items() if checked]
         if split_names:
@@ -112,11 +216,11 @@ def verify_slip_payment(issuer_name: str, receiver_name: str, amount: float, ses
         if item['paidBy']:
             net_balances[item['paidBy']] -= item['price']
 
-    # Check if payment matches expected transfer
     expected_amount = abs(net_balances.get(receiver_name, 0))
     return abs(expected_amount - amount) < 0.01
 
-# API endpoints
+# --- API Endpoints ---
+
 @app.post("/api/slip/upload")
 async def upload_slips(files: list[UploadFile] = File(...)):
     session = SessionLocal()
@@ -126,20 +230,17 @@ async def upload_slips(files: list[UploadFile] = File(...)):
         try:
             start_time = time.time()
             
-            # OCR processing only (no QR code)
             ocr_data = await extract_text_from_image_api(file)
             processed_data = parse_kbank_slip_text(ocr_data)
             
-            # Get details from OCR
             amount = processed_data.get("grandTotal")
             issuer_name = processed_data.get("issuerName")
             receiver_name = processed_data.get("customerName")
             
-            # Validate slip
             is_valid = amount is not None
             is_verified = False
             
-            if amount is not None and issuer_name and receiver_name:
+            if is_valid and issuer_name and receiver_name:
                 is_verified = verify_slip_payment(
                     issuer_name=issuer_name,
                     receiver_name=receiver_name,
@@ -147,7 +248,6 @@ async def upload_slips(files: list[UploadFile] = File(...)):
                     session=session
                 )
 
-            # Save to database
             slip = SlipHistory(
                 filename=file.filename,
                 amount=amount,
@@ -182,33 +282,33 @@ async def upload_slips(files: list[UploadFile] = File(...)):
             })
         finally:
             await file.close()
-
+    
+    session.close()
     return {"results": results}
 
 @app.get("/api/slip/history")
 def get_slip_history():
     session = SessionLocal()
-    slips = session.query(SlipHistory).order_by(SlipHistory.created_at.desc()).limit(20).all()
-    return [{
-        "filename": s.filename,
-        "amount": float(s.amount) if s.amount else None,
-        "status": s.status,
-        "verified": s.verified,
-        "issuer_name": s.issuer_name,
-        "receiver_name": s.receiver_name,
-        "created_at": s.created_at.isoformat()
-    } for s in slips]
+    try:
+        slips = session.query(SlipHistory).order_by(SlipHistory.created_at.desc()).limit(20).all()
+        return [{
+            "filename": s.filename,
+            "amount": float(s.amount) if s.amount else None,
+            "status": s.status,
+            "verified": s.verified,
+            "issuer_name": s.issuer_name,
+            "receiver_name": s.receiver_name,
+            "created_at": s.created_at.isoformat()
+        } for s in slips]
+    finally:
+        session.close()
 
 @app.post("/api/state/save")
 async def save_state(request: Request):
     session = SessionLocal()
     try:
         payload = await request.json()
-        
-        # Clear existing state
         session.query(SharedState).delete()
-        
-        # Save new state
         state = SharedState(data=payload)
         session.add(state)
         session.commit()
@@ -229,5 +329,4 @@ def load_state():
         session.close()
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
